@@ -1,7 +1,9 @@
 package pt.cedac.p1per;
 
+import com.google.api.services.gmail.Gmail;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
+import org.jsoup.helper.StringUtil;
 import org.jsoup.helper.Validate;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -9,8 +11,19 @@ import org.jsoup.select.Elements;
 import pt.cedac.p1per.database.DatabaseManager;
 import pt.cedac.p1per.exception.DatabaseConnectionFailedException;
 import pt.cedac.p1per.exception.DatabaseSetupFailedException;
+import pt.cedac.p1per.mailing.GoogleMail;
+import pt.cedac.p1per.mailing.GoogleUtil;
 
+import javax.mail.MessagingException;
+import javax.mail.internet.MimeMessage;
 import java.io.IOException;
+import java.sql.Array;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
 
 /**
  * Created by cedac on 16/09/16.
@@ -31,6 +44,7 @@ public class App {
         print("\nLinks: (%d)", links.size());
         for (Element link : links) {
             String name = link.text().split(" : ")[0];
+            String album = link.text().split(" : ")[1];
             String albumLink = link.select("span.gold > a").first().attr("abs:href");
             print(" * %s", name);
             doc = fetchData(albumLink);
@@ -38,11 +52,16 @@ public class App {
             print(" --- %s", genre.first().text());
 
             try {
-                DatabaseManager.getInstance().addEntry(name, "placeholder", genre.first().text().split(":")[1]);
+                DatabaseManager.getInstance().addEntry(name, album, genre.first().text().split(":")[1]);
             } catch (DatabaseConnectionFailedException e) {
-                e.printStackTrace();
+                //should try again FIXME!!
             }
         }
+
+        ArrayList<String> report = makeReport();
+        printReport(report);
+        mailReport(report);
+
     }
 
     private static java.sql.Connection bootDatabase() {
@@ -96,5 +115,72 @@ public class App {
                 }
             }
         }
+    }
+
+    private static ArrayList<String> makeReport() {
+        try {
+            int lastUpdate = DatabaseManager.getInstance().getLastUpdate();
+            ResultSet valuesToReport = DatabaseManager.getInstance().getAllEntrysSince(lastUpdate);
+            ArrayList<String> lines = new ArrayList<String>();
+            String artist;
+            String album;
+            String genres;
+            String youtubeLink;
+            String googleLink;
+
+            while (valuesToReport.next()) {
+                artist = valuesToReport.getString(DatabaseManager.ARTIST);
+                album = valuesToReport.getString(DatabaseManager.ALBUM);
+                genres = valuesToReport.getString(DatabaseManager.GENRES);
+                youtubeLink = "https://www.youtube.com/results?search_query=" + artist.replace(" ", "+");
+                googleLink = "https://www.google.pt/search?q=" + artist.replace(" ", "+");
+                lines.add("Artist: " + artist + "\n" +
+                            "Album: " + album + "\n" +
+                            "Genres: " + genres + "\n" +
+                            "Youtube: " + youtubeLink + "\n" +
+                            "General Info: " + googleLink + "\n" +
+                            "\n");
+            }
+
+            return lines;
+
+        } catch (DatabaseConnectionFailedException e) {
+            e.printStackTrace();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private static void printReport(ArrayList<String> lines) {
+        for (String line : lines) {
+            System.out.print(line);
+        }
+    }
+
+    private static void mailReport(ArrayList<String> lines) {
+        String messageString = "Hello, \n here's your P1per Report :) \n\n";
+
+        for (String line : lines) {
+            messageString += line;
+        }
+
+        messageString += "\n\nHave a great day! :D,\nYours truly, \nP1per";
+
+        DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm");
+        Date date = new Date();
+        String dateString = dateFormat.format(date);
+
+        try {
+            MimeMessage mimeMessage = GoogleMail.createEmail("carlosalvc@gmail.com",
+                    "p1per.report@gmail.com", "P1per report " + dateString,  messageString);
+            GoogleMail.sendMessage(GoogleUtil.getGmailService(), "me", mimeMessage);
+        } catch (MessagingException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
     }
 }

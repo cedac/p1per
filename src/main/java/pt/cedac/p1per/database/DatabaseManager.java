@@ -3,10 +3,7 @@ package pt.cedac.p1per.database;
 import pt.cedac.p1per.exception.DatabaseConnectionFailedException;
 import pt.cedac.p1per.exception.DatabaseSetupFailedException;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 
 /**
  * Created by cedac on 29/09/16.
@@ -14,6 +11,11 @@ import java.sql.Statement;
 public class DatabaseManager {
     private static DatabaseManager instance = null;
     public static final String DB_NAME = "data.db";
+    public static final String ARTIST = "ARTIST";
+    public static final String ALBUM = "ALBUM";
+    public static final String GENRES = "GENRES";
+    public static final String DATE = "DATE";
+
     private Connection conn = null;
 
     private DatabaseManager() {}
@@ -46,10 +48,10 @@ public class DatabaseManager {
             stmt = c.createStatement();
             String sql = "CREATE TABLE IF NOT EXISTS INFO " +
                     "(ID INTEGER PRIMARY KEY     AUTOINCREMENT," +
-                    " ARTIST           TEXT    NOT NULL, " +
-                    " ALBUM            TEXT     NOT NULL, " +
-                    " GENRES           TEXT, " +
-                    " DATE             TEXT)";
+                     ARTIST + "          TEXT    NOT NULL, " +
+                     ALBUM + "           TEXT     NOT NULL, " +
+                     GENRES + "          TEXT, " +
+                     DATE + "            TEXT)";
             stmt.executeUpdate(sql);
             stmt.close();
 
@@ -67,6 +69,11 @@ public class DatabaseManager {
             sql = "CREATE TABLE IF NOT EXISTS LASTREPORT " +
                     "(LAST) ";
             stmt.executeUpdate(sql);
+
+            stmt = c.createStatement();
+            sql = "INSERT INTO  LASTREPORT VALUES(0)";
+            stmt.executeUpdate(sql);
+
             stmt.close();
 
             c.close();
@@ -76,6 +83,9 @@ public class DatabaseManager {
     }
 
     public void addEntry(String artist, String album, String genres) throws DatabaseConnectionFailedException {
+
+        if (checkIfExists(artist, album)) return;
+
         if (conn == null) {
             try {
                 this.getConnection();
@@ -84,6 +94,32 @@ public class DatabaseManager {
             }
         }
 
+        Statement stmt = null;
+        try {
+            stmt = conn.createStatement();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        String get = "INSERT INTO INFO (ARTIST,ALBUM,GENRES) " +
+                "VALUES (\'" + artist + "', '" + album +"', '" + genres + "');";
+        try {
+            stmt.executeUpdate(get);
+            stmt.close();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private boolean checkIfExists(String artistToCheck, String albumToCheck) throws DatabaseConnectionFailedException {
+        if (conn == null) {
+            try {
+                this.getConnection();
+            } catch (DatabaseConnectionFailedException e) {
+                throw new DatabaseConnectionFailedException();
+            }
+        }
 
         Statement stmt = null;
         try {
@@ -92,14 +128,82 @@ public class DatabaseManager {
             e.printStackTrace();
         }
 
-        String sql = "INSERT INTO INFO (ARTIST,ALBUM,GENRES) " +
-                "VALUES (\'" + artist + "\', " + "'placeholder'" +", \'" + genres + "\');";
+        String checkIfExists = "SELECT * FROM INFO" +
+                " WHERE " + ARTIST + " = '" + artistToCheck +"'" +
+                " AND " + ALBUM + " = '" + albumToCheck + "' LIMIT 1;";
+
+        System.out.print("Executing : " + checkIfExists + "\n Returning: ");
+
+        ResultSet res;
+
         try {
-            stmt.executeUpdate(sql);
+            res = stmt.executeQuery(checkIfExists);
+
+            boolean exists = res.next();
+            System.out.println(exists);
+
             stmt.close();
+            return exists;
+        } catch (SQLException e) {
+            throw new DatabaseConnectionFailedException();
+        }
+
+    }
+
+    public ResultSet getAllEntrysSince(int lastEntry) throws DatabaseConnectionFailedException {
+        if (conn == null) {
+            try {
+                this.getConnection();
+            } catch (DatabaseConnectionFailedException e) {
+                throw new DatabaseConnectionFailedException();
+            }
+        }
+
+        Statement stmt = null;
+        try {
+            stmt = conn.createStatement();
         } catch (SQLException e) {
             e.printStackTrace();
         }
 
+        lastEntry = lastEntry == 0 ? -1 : lastEntry; //hack to treat zero
+
+        String sql = "SELECT * FROM INFO " +
+                        "WHERE 'ID' > " + lastEntry + ";";
+
+        try {
+            return stmt.executeQuery(sql);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            throw new DatabaseConnectionFailedException();
+        }
+    }
+
+    public int getLastUpdate() throws DatabaseConnectionFailedException {
+        if (conn == null) {
+            try {
+                this.getConnection();
+            } catch (DatabaseConnectionFailedException e) {
+                throw new DatabaseConnectionFailedException();
+            }
+        }
+
+        Statement stmt = null;
+        try {
+            stmt = conn.createStatement();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+
+        String sql = "SELECT * FROM LASTREPORT";
+        ResultSet res;
+        try {
+            res = stmt.executeQuery(sql);
+            res.next();
+            return res.getInt("LAST");
+        } catch (SQLException e) {
+            throw  new DatabaseConnectionFailedException();
+        }
     }
 }
